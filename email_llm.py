@@ -1,18 +1,19 @@
+import email
+import getpass
 import imaplib
+import json
 import logging
 import pathlib
 import queue
-import threading
-from typing import Dict, Union, Optional
-from bs4 import BeautifulSoup
-from multiprocessing.pool import ThreadPool
-import getpass
-import email
-import json
 import re
+import threading
 import time
-import requests
+from multiprocessing.pool import ThreadPool
+from typing import Dict, Optional, Union
+
 import pickledb
+import requests
+from bs4 import BeautifulSoup
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ pdb = pickledb.load("data.db", True)
 my_email_addr = input("Enter your gmail addr: ").strip()
 
 import os
+
 get_pass_fn = input
 if os.name != "nt":
     get_pass_fn = getpass.getpass
@@ -31,16 +33,18 @@ imap_password = get_pass_fn("Enter your gmail application (IMAP) password: ")
 
 
 mail_search_string = "ALL"
-search_only_unread = input("Enter 'y' to run only over unread emails (any other answer means running on everything): ")
+search_only_unread = input(
+    "Enter 'y' to run only over unread emails (any other answer means running on everything): "
+)
 if search_only_unread.lower().strip() == "y":
     mail_search_string = "(UNSEEN)"
 
 
 def connect_to_gmail_imap() -> imaplib.IMAP4_SSL:
-    imap_url = 'imap.gmail.com'
+    imap_url = "imap.gmail.com"
     mail = imaplib.IMAP4_SSL(imap_url)
     mail.login(my_email_addr, imap_password)
-    mail.select(mailbox='INBOX')
+    mail.select(mailbox="INBOX")
     return mail
 
 
@@ -66,7 +70,7 @@ class TrasherThread(threading.Thread):
         self.queue = queue.Queue()
 
     def move_gmail_to_trash(self, uid: str):
-        self.mail_client.uid('STORE', uid, '+X-GM-LABELS', '\\Trash')
+        self.mail_client.uid("STORE", uid, "+X-GM-LABELS", "\\Trash")
 
     def run(self):
         while True:
@@ -75,7 +79,7 @@ class TrasherThread(threading.Thread):
             uid = self.queue.get()
             self.move_gmail_to_trash(uid)
             logger.info(f"Deleting uid {uid}")
-            time.sleep(0.35) #  hope we don't get rate limited...
+            time.sleep(0.35)  #  hope we don't get rate limited...
 
 
 pdb_writer = WriteThread()
@@ -84,7 +88,9 @@ trasher = TrasherThread()
 trasher.start()
 
 
-def extract_data(msg: email.message.Message) -> Dict[str, Union[str, bytes, int, float]]:
+def extract_data(
+    msg: email.message.Message,
+) -> Dict[str, Union[str, bytes, int, float]]:
     data = {}
     data["body"] = ""
     for part in msg.walk():
@@ -92,12 +98,14 @@ def extract_data(msg: email.message.Message) -> Dict[str, Union[str, bytes, int,
         if "text" in part.get_content_type():
             payload = str(part.get_payload(decode=True))
             soup = BeautifulSoup(payload)
-            txt = re.sub(' +', ' ', soup.get_text())
+            txt = re.sub(" +", " ", soup.get_text())
             data["body"] += txt
     return data
 
 
-def get_result(message: Dict[str, Union[str, bytes, int, float]]) -> Dict[str, Union[str, bytes, int, float]]:
+def get_result(
+    message: Dict[str, Union[str, bytes, int, float]]
+) -> Dict[str, Union[str, bytes, int, float]]:
     payload = {
         "model": "llama3.1",
         "prompt": f"""
@@ -134,20 +142,21 @@ def get_result(message: Dict[str, Union[str, bytes, int, float]]) -> Dict[str, U
              It is fine if there are multiple reasons, you can list multiple.
         """,
         "stream": False,
-        "options": {
-            "temperature": 0
-        },
+        "options": {"temperature": 0},
     }
     result = requests.post("http://localhost:11434/api/generate", json=payload)
-    result = result.json()['response']
+    result = result.json()["response"]
     return result
 
 
-def process_and_delete_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
+def process_and_delete_email_idx(
+    idx: str,
+) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
     result = process_email_idx(idx)
     if result["decision"] == "DELETE":
         trasher.queue.put(idx)
     return result
+
 
 def process_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
     try:
@@ -156,19 +165,21 @@ def process_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, flo
             logger.info(f"Cache hit on idx: {idx}")
             return maybe_result
         mail_client_ = connect_to_gmail_imap()
-        status, msg = mail_client_.fetch(str(idx), '(RFC822)')
+        status, msg = mail_client_.fetch(str(idx), "(RFC822)")
         email_fields = extract_data(email.message_from_bytes(msg[0][1]))
         keep = get_result(email_fields)
         decision = keep.split("\n")[0]
         reason = keep.split("\n")[1]
         email_fields["decision"] = decision.replace("\r", "")
-        email_fields["reason" ] = reason
+        email_fields["reason"] = reason
         logger.info(json.dumps(email_fields, indent=2))
         logger.info(f"idx: {idx}, Decision: {decision} Reason: {reason}")
         id_key = "Message-ID"
         if id_key not in email_fields:
             id_key = "Message-Id"
-        fn = re.sub('[^0-9a-zA-Z]+', '_', email_fields[id_key].replace(" ", "_").lower().strip())
+        fn = re.sub(
+            "[^0-9a-zA-Z]+", "_", email_fields[id_key].replace(" ", "_").lower().strip()
+        )
         file_path = email_dir / (fn + ".eml")
         f = open(file_path, "wb")
         f.write(msg[0][1])
@@ -192,7 +203,9 @@ if __name__ == "__main__":
 
     keys = pdb.getall()
     records = [(key, pdb.get(key)) for key in keys]
-    deleted_records = [(key, record) for key, record in records if record['decision'] == 'DELETE']
+    deleted_records = [
+        (key, record) for key, record in records if record["decision"] == "DELETE"
+    ]
     num_deletions = len(deleted_records)
     logger.info(f"Marked {num_deletions} as deleted / trashed.")
     logger.info("Finished ...")
