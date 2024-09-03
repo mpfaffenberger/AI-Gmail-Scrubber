@@ -35,7 +35,7 @@ In the background Ollama runs a server by default on `localhost:11434`
 
 ### Setting up a Python Environment
 
-I highly suggest simply installing Anaconda, which can be done downloaded here: 
+I highly suggest simply installing Anaconda, which can be downloaded here: 
 https://www.anaconda.com/download/success
 
 You could also just use whatever environment you want. As long as it's Python 3.9 or newer, I doubt there will be much of a difference.
