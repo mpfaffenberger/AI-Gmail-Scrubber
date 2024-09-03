@@ -119,14 +119,14 @@ def get_result(
          I'm interested in keeping: 
              * [CODE 6 - KEEP] Please keep legitimate invoices
              * [CODE 7 - KEEP] Please keep anything from a real human, even if I am not the direct recipient.
-             * [CODE 8 - KEEP] Please keep everything I sent to myself {my_email_addr}.
+             * [CODE 8 - KEEP] Please keep everything I sent to myself {my_email_addr}
              * [CODE 9 - KEEP] Please keep anything regarding taxes, accounting, banking, or financial information.
              * [CODE 10 - KEEP] Please keep bills
              * [CODE 11 - KEEP] Please keep order receipts
-             * [CODE 12 - KEEP] Please keep conversations between myself and another individual on a third party platform such as craigslist.
-             * [CODE 13 - KEEP] Please keep anything with an attachment.
+             * [CODE 12 - KEEP] Please keep conversations between myself and another individual on a third party platform such as craigslist
+             * [CODE 13 - KEEP] Please keep anything with an attachment
              * [CODE 14 - KEEP] Please keep group emails
-             * [CODE 15 - KEEP] Please ALWAYS keep personal messages between me (mike.pfaffenberger@gmail.com) and others.
+             * [CODE 15 - KEEP] Please ALWAYS keep personal messages between me ({my_email_addr}) and others
              * [CODE 16 - KEEP] Please keep any registration emails that contain usernames, since I always lose those :(
              * [CODE 17 - KEEP] Please keep any emails related to job searching or recruitment   
         
