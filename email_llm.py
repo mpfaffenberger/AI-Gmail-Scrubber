@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 NUM_THREADS = 4
 email_dir = pathlib.Path("./email_files")
+email_dir.mkdir(exist_ok=True)
 pdb = pickledb.load("data.db", True)
 my_email_addr = input("Enter your gmail addr: ").strip()
 
@@ -37,14 +38,14 @@ search_only_unread = input(
     "Enter 'y' to run only over unread emails (any other answer means running on everything): "
 )
 if search_only_unread.lower().strip() == "y":
-    mail_search_string = "(UNSEEN)"
+    mail_search_string = "UNSEEN"
 
 
 def connect_to_gmail_imap() -> imaplib.IMAP4_SSL:
     imap_url = "imap.gmail.com"
     mail = imaplib.IMAP4_SSL(imap_url)
     mail.login(my_email_addr, imap_password)
-    mail.select(mailbox="INBOX")
+    mail.select(mailbox="INBOX", readonly=False)
     return mail
 
 
@@ -62,6 +63,13 @@ class WriteThread(threading.Thread):
             pdb.set(idx, item)
 
 
+
+def move_gmail_to_trash(mail_client, uid: str):
+    mail_client.store(uid, '+X-GM-LABELS', '\\Trash')
+    mail_client.store(uid, '+FLAGS', '\\Seen')
+    mail_client.expunge()
+
+
 class TrasherThread(threading.Thread):
 
     def __init__(self):
@@ -70,7 +78,8 @@ class TrasherThread(threading.Thread):
         self.queue = queue.Queue()
 
     def move_gmail_to_trash(self, uid: str):
-        self.mail_client.uid("STORE", uid, "+X-GM-LABELS", "\\Trash")
+        self.mail_client.store(uid, '+FLAGS', '\\Deleted')
+        self.mail_client.expunge()
 
     def run(self):
         while True:
@@ -103,8 +112,23 @@ def extract_data(
     return data
 
 
+def get_result_wrap(message, temp=0.0):
+    try:
+        res = get_result(message, temp)
+        decision = res.split("\n")[0].replace("\r", "")
+        reason = res.split("\n")[1]
+        if decision not in ["KEEP", "DELETE"]:
+            logger.info(f"incrementing temp, {decision}, {reason}")
+            return get_result_wrap(message, temp=temp + 0.2)
+        return decision, reason
+    except Exception as e:
+        logger.info(f"incrementing temp {res}")
+        return get_result_wrap(message, temp=temp + 0.2)
+
+
 def get_result(
-    message: Dict[str, Union[str, bytes, int, float]]
+    message: Dict[str, Union[str, bytes, int, float]],
+    temp: float
 ) -> Dict[str, Union[str, bytes, int, float]]:
     payload = {
         "model": "llama3.1",
@@ -135,14 +159,15 @@ def get_result(
                 From: {message["From"]}.
                 To:  {message["To"]}.
                 Date: {message["Date"]}
-                Body: {message["body"]}
+                Subject: {message["Subject"]}
+                Body: {re.sub(r"\s+"," ", message["body"].strip())}
                 *** END MESSAGE ***
             
             Reply only with 'KEEP', 'DELETE', followed by a newline symbol, and then a very short sentence explaining your reasoning and citing the [CODE x].
              It is fine if there are multiple reasons, you can list multiple.
         """,
         "stream": False,
-        "options": {"temperature": 0},
+        "options": {"temperature": temp},
     }
     result = requests.post("http://localhost:11434/api/generate", json=payload)
     result = result.json()["response"]
@@ -151,27 +176,26 @@ def get_result(
 
 def process_and_delete_email_idx(
     idx: str,
+    mail_client
 ) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
-    result = process_email_idx(idx)
+    result = process_email_idx(idx, mail_client)
     if result is None:
         return None
     if result["decision"] == "DELETE":
-        trasher.queue.put(idx)
+        move_gmail_to_trash(mail_client, idx)
     return result
 
 
-def process_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
+def process_email_idx(idx: str, mail_client_) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
     try:
         maybe_result = pdb.get(idx)
         if maybe_result:
             logger.info(f"Cache hit on idx: {idx}")
             return maybe_result
-        mail_client_ = connect_to_gmail_imap()
         status, msg = mail_client_.fetch(str(idx), "(RFC822)")
-        email_fields = extract_data(email.message_from_bytes(msg[0][1]))
-        keep = get_result(email_fields)
-        decision = keep.split("\n")[0]
-        reason = keep.split("\n")[1]
+        email_bytes = [part for part in msg if isinstance(part, tuple) and b"RFC822" in part[0]][0][1]
+        email_fields = extract_data(email.message_from_bytes(email_bytes))
+        decision, reason = get_result_wrap(email_fields)
         email_fields["decision"] = decision.replace("\r", "")
         email_fields["reason"] = reason
         logger.info(json.dumps(email_fields, indent=2))
@@ -184,10 +208,9 @@ def process_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, flo
         )
         file_path = email_dir / (fn + ".eml")
         f = open(file_path, "wb")
-        f.write(msg[0][1])
+        f.write(email_bytes)
         f.close()
         pdb_writer.queue.put((idx, email_fields))
-        mail_client_.close()
     except Exception as e:
         logger.error("Failed to LLM it", exc_info=e)
         return None
@@ -197,12 +220,11 @@ def process_email_idx(idx: str) -> Optional[Dict[str, Union[str, bytes, int, flo
 if __name__ == "__main__":
     mail_client = connect_to_gmail_imap()
 
-    status, ids = mail_client.search(None, "ALL")
-    ids = ids[0].decode().split(" ")
+    status, ids = mail_client.search(None, mail_search_string)
+    ids = ids[0].decode().split(" ")[::-1]
 
-    tp = ThreadPool(NUM_THREADS)
-    tp.map(process_and_delete_email_idx, ids)
-
+    for id_ in ids:
+        process_and_delete_email_idx(id_, mail_client)
     keys = pdb.getall()
     records = [(key, pdb.get(key)) for key in keys]
     deleted_records = [
