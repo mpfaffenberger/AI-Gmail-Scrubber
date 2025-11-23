@@ -73,6 +73,7 @@ async def _run_processing(
     dry_run: bool,
     max_concurrent: int = 2,
     folder: str = "INBOX",
+    reprocess: bool = False,
 ) -> dict:
     """Run the email processing workflow.
 
@@ -82,6 +83,7 @@ async def _run_processing(
         dry_run: If True, don't actually modify emails.
         max_concurrent: Maximum number of emails to process concurrently.
         folder: IMAP folder to fetch emails from (default: "INBOX").
+        reprocess: If True, process ALL emails ignoring previous tags.
 
     Returns:
         Processing results dict.
@@ -117,6 +119,7 @@ async def _run_processing(
             continue_on_error=True,
             max_concurrent=max_concurrent,
             folder=folder,
+            reprocess=reprocess,
         )
         return results
     finally:
@@ -146,6 +149,11 @@ def process(
         "-f",
         help="IMAP folder to process emails from",
     ),
+    reprocess: bool = typer.Option(
+        False,
+        "--reprocess",
+        help="Process ALL emails, ignoring previous processing tags",
+    ),
     config: Optional[str] = typer.Option(
         None,
         "--config",
@@ -162,6 +170,7 @@ def process(
     """Process emails using AI classification.
 
     Fetches unprocessed emails from specified folder, classifies them, and applies decisions.
+    Use --reprocess to reprocess all emails regardless of previous processing status.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -175,7 +184,10 @@ def process(
 
         setup_logging(verbose)
 
-        console.print("\n[cyan bold]🚀 Starting Email Processing[/cyan bold]\n")
+        mode = "[yellow bold]REPROCESS MODE[/yellow bold]" if reprocess else "[cyan bold]🚀 Starting Email Processing[/cyan bold]"
+        console.print(f"\n{mode}\n")
+        if reprocess:
+            console.print("[yellow]⚠️  Reprocessing ALL emails, ignoring previous tags[/yellow]\n")
 
         # Load config
         config_file = config or str(DEFAULT_CONFIG_FILE)
@@ -191,6 +203,7 @@ def process(
                 dry_run=False,
                 max_concurrent=max_concurrent,
                 folder=folder,
+                reprocess=reprocess,
             )
         )
 
@@ -249,6 +262,11 @@ def dry_run(
         "-f",
         help="IMAP folder to preview emails from",
     ),
+    reprocess: bool = typer.Option(
+        False,
+        "--reprocess",
+        help="Preview ALL emails, ignoring previous processing tags",
+    ),
     config: Optional[str] = typer.Option(
         None,
         "--config",
@@ -265,6 +283,7 @@ def dry_run(
     """Preview what would happen without modifying emails.
 
     Shows the decisions that would be made for emails in specified folder but doesn't actually apply them.
+    Use --reprocess to preview all emails regardless of previous processing status.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -278,10 +297,13 @@ def dry_run(
 
         setup_logging(verbose)
 
+        mode_text = "REPROCESS " if reprocess else ""
         console.print(
-            "\n[cyan bold]👀 Preview Mode (Dry Run)[/cyan bold]\n"
+            f"\n[cyan bold]👀 Preview Mode ({mode_text}Dry Run)[/cyan bold]\n"
             "[yellow]No emails will be modified[/yellow]\n"
         )
+        if reprocess:
+            console.print("[yellow]⚠️  Previewing ALL emails, ignoring previous tags[/yellow]\n")
 
         # Load config
         config_file = config or str(DEFAULT_CONFIG_FILE)
@@ -297,6 +319,7 @@ def dry_run(
                 dry_run=True,
                 max_concurrent=max_concurrent,
                 folder=folder,
+                reprocess=reprocess,
             )
         )
 
@@ -379,10 +402,16 @@ def daemon(
         "-f",
         help="IMAP folder to monitor and process emails from",
     ),
+    reprocess: bool = typer.Option(
+        False,
+        "--reprocess",
+        help="Process ALL emails, ignoring previous processing tags",
+    ),
 ) -> None:
     """Run in daemon mode - continuously process emails in batches from specified folder.
 
     Fetches and processes emails in batches for efficiency. Press Ctrl+C to stop.
+    Use --reprocess to process all emails regardless of previous processing status.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -412,10 +441,13 @@ def daemon(
         successful = 0
         failed = 0
 
+        mode_text = "[yellow]REPROCESS MODE[/yellow] | " if reprocess else ""
         console.print(
-            f"[cyan]Folder: {folder} | Batch size: {batch_size} | Max concurrent: {max_concurrent} | "
+            f"[cyan]{mode_text}Folder: {folder} | Batch size: {batch_size} | Max concurrent: {max_concurrent} | "
             f"Delay when no emails: {delay}s[/cyan]\n"
         )
+        if reprocess:
+            console.print("[yellow]⚠️  Processing ALL emails, ignoring previous tags[/yellow]\n")
 
         # Run processing loop
         # TODO: Future optimization - keep IMAP connection alive across batches
@@ -434,6 +466,7 @@ def daemon(
                         dry_run=False,
                         max_concurrent=max_concurrent,
                         folder=folder,
+                        reprocess=reprocess,
                     )
                 )
 

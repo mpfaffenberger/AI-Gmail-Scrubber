@@ -64,6 +64,7 @@ class EmailOrchestrator:
         continue_on_error: bool = True,
         max_concurrent: int = 2,
         folder: str = "INBOX",
+        reprocess: bool = False,
     ) -> dict[str, Any]:
         """Main entry point for email processing workflow.
 
@@ -73,6 +74,7 @@ class EmailOrchestrator:
             continue_on_error: If True, continue processing on errors.
             max_concurrent: Maximum number of emails to process concurrently (default: 2).
             folder: IMAP folder to fetch emails from (default: "INBOX").
+            reprocess: If True, process ALL emails ignoring previous processing tags.
 
         Returns:
             Dict with processing statistics and results.
@@ -93,8 +95,10 @@ class EmailOrchestrator:
             # Initialize agent tools
             await self.agent.initialize_tools()
 
-            # Get unprocessed emails from specified folder
-            unprocessed = await self.get_unprocessed_emails(n=batch_size, folder=folder)
+            # Get emails from specified folder (unprocessed or all if reprocessing)
+            unprocessed = await self.get_unprocessed_emails(
+                n=batch_size, folder=folder, reprocess=reprocess
+            )
 
             if not unprocessed:
                 console.print("\n[green]✓ No unprocessed emails found[/green]\n")
@@ -223,12 +227,15 @@ class EmailOrchestrator:
         except Exception as e:
             raise OrchestratorError(str(e)) from e
 
-    async def get_unprocessed_emails(self, n: int = 10, folder: str = "INBOX") -> list[dict[str, Any]]:
+    async def get_unprocessed_emails(
+        self, n: int = 10, folder: str = "INBOX", reprocess: bool = False
+    ) -> list[dict[str, Any]]:
         """Fetch unprocessed emails from specified folder.
 
         Args:
             n: Number of emails to retrieve.
             folder: IMAP folder to search (default: "INBOX").
+            reprocess: If True, fetch ALL emails regardless of processing status.
 
         Returns:
             List of email info dicts.
@@ -239,7 +246,9 @@ class EmailOrchestrator:
                     "Email tools not initialized. Run orchestrator.run_processing() first."
                 )
 
-            result = await self.agent.email_tools.get_unprocessed_emails(n=n, folder=folder)
+            result = await self.agent.email_tools.get_unprocessed_emails(
+                n=n, folder=folder, ignore_tag=reprocess
+            )
 
             if result.success:
                 emails = result.data["emails"]

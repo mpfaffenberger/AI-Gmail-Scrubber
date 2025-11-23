@@ -96,7 +96,7 @@ class EmailTools:
         self.agent_tag = agent_tag
 
     async def get_unprocessed_emails(
-        self, n: int = 10, tag: Optional[str] = None, folder: str = "INBOX"
+        self, n: int = 10, tag: Optional[str] = None, folder: str = "INBOX", ignore_tag: bool = False, unread_only: bool = False
     ) -> ToolResult:
         """Get the most recent unprocessed emails from a specific folder.
 
@@ -107,12 +107,14 @@ class EmailTools:
             n: Number of emails to retrieve (default 10).
             tag: Optional specific tag to filter by. Uses agent_tag if not specified.
             folder: IMAP folder to search in (default "INBOX").
+            ignore_tag: If True, fetch ALL emails regardless of tag status (for reprocessing).
+            unread_only: If True, only fetch unread emails (default False - fetch all).
 
         Returns:
             ToolResult with list of EmailInfo objects in data['emails'].
         """
         try:
-            from imap_tools import NOT, AND
+            from imap_tools import NOT, AND, A
             
             filter_tag = tag or self.agent_tag
 
@@ -120,15 +122,30 @@ class EmailTools:
             # This ensures we only search in the specified folder (default: INBOX)
             self.mailbox.folder.set(folder)
 
-            # Search for emails that DON'T have our classification keyword
-            # This properly queries the IMAP server instead of client-side filtering
-            # The NOT(keyword=...) search criteria finds unclassified emails
-            search_criteria = NOT(keyword=filter_tag)
+            # Build search criteria based on flags
+            criteria_parts = []
+            
+            # Add tag filter (unless reprocessing)
+            if not ignore_tag:
+                criteria_parts.append(NOT(keyword=filter_tag))
+            
+            # Add unread filter if requested
+            if unread_only:
+                criteria_parts.append(A(seen=False))
+            
+            # Combine criteria or use ALL if no filters
+            if len(criteria_parts) == 0:
+                search_criteria = A(all=True)
+            elif len(criteria_parts) == 1:
+                search_criteria = criteria_parts[0]
+            else:
+                search_criteria = AND(*criteria_parts)
             
             # Fetch messages matching criteria, reverse=True for newest first
             # Limit fetch to avoid overwhelming large mailboxes
             fetch_limit = max(n * 2, 50)  # Fetch extra in case some are skipped
             
+            # Fetch messages - reverse=True gives us newest first
             messages = list(
                 self.mailbox.fetch(
                     criteria=search_criteria,
@@ -166,9 +183,10 @@ class EmailTools:
                 )
                 emails.append(email_info.model_dump())
 
+            mode = "all" if ignore_tag else "unprocessed"
             return ToolResult(
                 success=True,
-                message=f"Retrieved {len(emails)} unprocessed emails from {folder} (sorted by date descending)",
+                message=f"Retrieved {len(emails)} {mode} emails from {folder} (sorted by date descending)",
                 data={"emails": emails, "folder": folder},
             )
 
