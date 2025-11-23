@@ -125,21 +125,64 @@ class EmailOrchestrator:
                             dry_run=dry_run,
                         )
 
-                        if result["success"]:
-                            category = result.get(
-                                "category", result.get("decision", "unknown")
-                            )
+                        # ALWAYS mark as processed to avoid infinite loops on failed emails
+                        category = result.get(
+                            "category", result.get("decision", "unknown")
+                        )
+                        
+                        # Track success/failure in metadata
+                        metadata = {
+                            "success": result["success"],
+                        }
+                        if not result["success"]:
+                            metadata["error"] = result.get("error", "Unknown error")
+                            
+                            # CRITICAL: Add IMAP keyword even when LLM fails to call tool
+                            # This marks the email as classified (prevents infinite retry loops)
+                            # The IMAP keyword allows get_unprocessed_emails() to skip this email
+                            # in future runs using NOT(keyword=TAG) search criteria
+                            if self.agent.email_tools and not dry_run:
+                                try:
+                                    await self.agent.email_tools.add_label_to_email(
+                                        email_info["email_id"],
+                                        self.agent.email_tools.agent_tag,
+                                    )
+                                    console.print("[yellow]⚠ Marked failed email as CLASSIFIED to avoid retry[/yellow]")
+                                except Exception as tag_error:
+                                    console.print(f"[red]⚠ Failed to tag email: {tag_error}[/red]")
 
-                            # Mark as processed in state tracking
-                            await self.mark_as_processed(
-                                email_info["email_id"],
-                                {"category": category},
-                            )
+                        await self.mark_as_processed(
+                            email_info["email_id"],
+                            {"category": category},
+                            metadata=metadata,
+                        )
 
                         return result
 
                     except Exception as e:
                         console.print(f"[red]✗ Error: {e}[/red]")
+                        
+                        # CRITICAL: Add IMAP keyword even on exception
+                        # This marks the email as classified (prevents infinite retry loops)
+                        # The IMAP keyword allows get_unprocessed_emails() to skip this email
+                        # in future runs using NOT(keyword=TAG) search criteria
+                        if self.agent.email_tools and not dry_run:
+                            try:
+                                await self.agent.email_tools.add_label_to_email(
+                                    email_info["email_id"],
+                                    self.agent.email_tools.agent_tag,
+                                )
+                                console.print("[yellow]⚠ Marked errored email as CLASSIFIED to avoid retry[/yellow]")
+                            except Exception as tag_error:
+                                console.print(f"[red]⚠ Failed to tag email: {tag_error}[/red]")
+                        
+                        # Mark as processed even on exception to avoid infinite retry
+                        await self.mark_as_processed(
+                            email_info["email_id"],
+                            {"category": "error"},
+                            metadata={"success": False, "error": str(e)},
+                        )
+                        
                         if not continue_on_error:
                             raise
                         return {

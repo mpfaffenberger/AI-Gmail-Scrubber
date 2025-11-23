@@ -38,21 +38,57 @@ class MockMailBox:
         self.folders = {}
         self.flagged = {}
 
-    def fetch(self, uid=None, mark_seen=False):
-        """Mock fetch method."""
-        if uid is None:
-            return self.messages
-        return [msg for msg in self.messages if msg.uid == uid]
+    def fetch(self, criteria=None, uid=None, mark_seen=False, reverse=False, limit=None):
+        """Mock fetch method with support for search criteria."""
+        messages = self.messages[:]
+        
+        # Handle UID-based fetch
+        if uid is not None:
+            return [msg for msg in messages if msg.uid == uid]
+        
+        # Handle search criteria (simplified for testing)
+        if criteria is not None:
+            # Check if it's a NOT(keyword=...) criteria
+            criteria_str = str(criteria)
+            if "NOT" in criteria_str and "keyword" in criteria_str:
+                # Extract the keyword being searched for
+                # For NOT(keyword='TAG'), filter out messages with that keyword in flags
+                filtered = []
+                for msg in messages:
+                    # Check if message has been flagged with any keywords
+                    msg_keywords = self.flagged.get(msg.uid, [])
+                    # If the criteria is NOT keyword, include messages WITHOUT that keyword
+                    has_keyword = any(kw in msg_keywords for kw in ["EMAIL_AGENT_PROCESSED"])
+                    if not has_keyword:
+                        filtered.append(msg)
+                messages = filtered
+        
+        # Apply reverse (newest first)
+        if reverse:
+            messages = list(reversed(messages))
+        
+        # Apply limit
+        if limit is not None:
+            messages = messages[:limit]
+        
+        return messages
 
     def flag(self, uids, flag_set, value):
-        """Mock flag method."""
-        for uid in uids if isinstance(uids, list) else [uids]:
+        """Mock flag method for adding/removing IMAP keywords."""
+        # Handle both single UID string and list of UIDs
+        uid_list = uids if isinstance(uids, list) else [uids]
+        
+        for uid in uid_list:
             if uid not in self.flagged:
                 self.flagged[uid] = []
+            
             if value:
-                if flag_set[0] not in self.flagged[uid]:
-                    self.flagged[uid].extend(flag_set)
+                # Add flags/keywords
+                for flag in flag_set:
+                    if flag not in self.flagged[uid]:
+                        self.flagged[uid].append(flag)
             else:
+                # Remove flags/keywords
                 self.flagged[uid] = [f for f in self.flagged[uid] if f not in flag_set]
 
     def move(self, uid, folder):

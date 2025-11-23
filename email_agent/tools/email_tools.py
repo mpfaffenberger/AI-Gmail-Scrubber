@@ -100,6 +100,9 @@ class EmailTools:
     ) -> ToolResult:
         """Get the most recent unprocessed emails.
 
+        Uses IMAP search to find emails that don't have the agent classification tag,
+        sorted by date in descending order (newest first).
+
         Args:
             n: Number of emails to retrieve (default 10).
             tag: Optional specific tag to filter by. Uses agent_tag if not specified.
@@ -108,31 +111,30 @@ class EmailTools:
             ToolResult with list of EmailInfo objects in data['emails'].
         """
         try:
+            from imap_tools import NOT, AND
+            
             filter_tag = tag or self.agent_tag
 
-            # Fetch only the most recent messages to avoid hanging on large mailboxes
-            # Fetch 2x the requested amount to account for already-processed emails
-            fetch_limit = max(n * 2, 20)  # Fetch at least 20 to have a decent sample
-
-            # Use reverse=True to get most recent first, and limit the fetch
-            all_messages = self.mailbox.fetch(
-                mark_seen=False, reverse=True, limit=fetch_limit
+            # Search for emails that DON'T have our classification keyword
+            # This properly queries the IMAP server instead of client-side filtering
+            # The NOT(keyword=...) search criteria finds unclassified emails
+            search_criteria = NOT(keyword=filter_tag)
+            
+            # Fetch messages matching criteria, reverse=True for newest first
+            # Limit fetch to avoid overwhelming large mailboxes
+            fetch_limit = max(n * 2, 50)  # Fetch extra in case some are skipped
+            
+            messages = list(
+                self.mailbox.fetch(
+                    criteria=search_criteria,
+                    mark_seen=False,
+                    reverse=True,  # Newest first (descending by date)
+                    limit=fetch_limit,
+                )
             )
-            messages = list(all_messages)
 
-            # Filter out already processed ones
-            unprocessed = []
-            for msg in messages:
-                # Check if email has the agent tag
-                flags = msg.flags if hasattr(msg, "flags") else []
-                if filter_tag not in flags:
-                    unprocessed.append(msg)
-                    # Stop once we have enough unprocessed emails
-                    if len(unprocessed) >= n:
-                        break
-
-            # We already have the most recent n since we're fetching reverse and breaking early
-            recent = unprocessed[:n]
+            # Take only the requested number
+            recent = messages[:n]
 
             # Convert to EmailInfo objects
             emails = []
@@ -161,7 +163,7 @@ class EmailTools:
 
             return ToolResult(
                 success=True,
-                message=f"Retrieved {len(emails)} unprocessed emails",
+                message=f"Retrieved {len(emails)} unprocessed emails (sorted by date descending)",
                 data={"emails": emails},
             )
 
@@ -249,26 +251,32 @@ class EmailTools:
             )
 
     async def add_label_to_email(self, email_id: str, label: str) -> ToolResult:
-        """Add a label/tag to an email.
+        """Add a label/tag to an email as an IMAP keyword.
+
+        This adds the label as an IMAP keyword (custom flag) that can be searched
+        using IMAP search criteria. The keyword will persist on the server and can
+        be used to track which emails have been processed by the agent.
 
         Args:
             email_id: Unique email identifier (UID).
-            label: Label/tag to add.
+            label: Label/tag to add as an IMAP keyword.
 
         Returns:
             ToolResult indicating success or failure.
         """
         try:
-            # For Gmail, use X-GM-LABELS; for others, use custom flags
+            # Add as IMAP keyword (custom flag)
+            # The mailbox.flag() method adds custom IMAP keywords that persist server-side
+            # and can be searched with keyword=label in search criteria
             self.mailbox.flag(email_id, [label], True)
             return ToolResult(
                 success=True,
-                message=f"Added label '{label}' to email {email_id}",
+                message=f"Added IMAP keyword '{label}' to email {email_id}",
             )
         except Exception as e:
             return ToolResult(
                 success=False,
-                message=f"Failed to add label: {str(e)}",
+                message=f"Failed to add IMAP keyword: {str(e)}",
             )
 
     async def move_email_to_folder(self, email_id: str, folder_path: str) -> ToolResult:
@@ -443,7 +451,9 @@ def register_email_tools(agent, email_tools_instance: EmailTools):
             )
 
             if result.success:
-                # Mark email as processed by adding agent tag
+                # CRITICAL: Mark email as classified by adding the agent tag as an IMAP keyword
+                # This prevents re-processing the same email in future runs
+                # The tag is searchable via IMAP search criteria (NOT keyword=TAG)
                 tag_result = await email_tools_instance.add_label_to_email(
                     email_id=email_id, label=email_tools_instance.agent_tag
                 )
@@ -451,7 +461,7 @@ def register_email_tools(agent, email_tools_instance: EmailTools):
                 action = "DELETED" if folder_name == "[Gmail]/Trash" else "moved"
                 return {
                     "success": True,
-                    "message": f"Email classified as '{category}', {action} to folder '{folder_name}', and marked as processed",
+                    "message": f"Email classified as '{category}', {action} to folder '{folder_name}', and marked as CLASSIFIED",
                     "category": category,
                     "folder_path": folder_name,
                     "reasoning": reasoning,
