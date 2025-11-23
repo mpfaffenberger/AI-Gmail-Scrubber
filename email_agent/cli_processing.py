@@ -72,6 +72,7 @@ async def _run_processing(
     batch_size: int,
     dry_run: bool,
     max_concurrent: int = 2,
+    folder: str = "INBOX",
 ) -> dict:
     """Run the email processing workflow.
 
@@ -80,6 +81,7 @@ async def _run_processing(
         batch_size: Number of emails to process.
         dry_run: If True, don't actually modify emails.
         max_concurrent: Maximum number of emails to process concurrently.
+        folder: IMAP folder to fetch emails from (default: "INBOX").
 
     Returns:
         Processing results dict.
@@ -114,6 +116,7 @@ async def _run_processing(
             dry_run=dry_run,
             continue_on_error=True,
             max_concurrent=max_concurrent,
+            folder=folder,
         )
         return results
     finally:
@@ -137,6 +140,12 @@ def process(
         min=1,
         max=10,
     ),
+    folder: str = typer.Option(
+        "INBOX",
+        "--folder",
+        "-f",
+        help="IMAP folder to process emails from",
+    ),
     config: Optional[str] = typer.Option(
         None,
         "--config",
@@ -152,7 +161,7 @@ def process(
 ) -> None:
     """Process emails using AI classification.
 
-    Fetches unprocessed emails, classifies them, and applies decisions.
+    Fetches unprocessed emails from specified folder, classifies them, and applies decisions.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -181,6 +190,7 @@ def process(
                 batch_size=batch_size,
                 dry_run=False,
                 max_concurrent=max_concurrent,
+                folder=folder,
             )
         )
 
@@ -233,6 +243,12 @@ def dry_run(
         min=1,
         max=10,
     ),
+    folder: str = typer.Option(
+        "INBOX",
+        "--folder",
+        "-f",
+        help="IMAP folder to preview emails from",
+    ),
     config: Optional[str] = typer.Option(
         None,
         "--config",
@@ -248,7 +264,7 @@ def dry_run(
 ) -> None:
     """Preview what would happen without modifying emails.
 
-    Shows the decisions that would be made but doesn't actually apply them.
+    Shows the decisions that would be made for emails in specified folder but doesn't actually apply them.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -280,6 +296,7 @@ def dry_run(
                 batch_size=batch_size,
                 dry_run=True,
                 max_concurrent=max_concurrent,
+                folder=folder,
             )
         )
 
@@ -348,10 +365,24 @@ def daemon(
         min=1,
         max=10,
     ),
+    batch_size: int = typer.Option(
+        20,
+        "--batch-size",
+        "-b",
+        help="Number of emails to fetch and process per batch",
+        min=1,
+        max=100,
+    ),
+    folder: str = typer.Option(
+        "INBOX",
+        "--folder",
+        "-f",
+        help="IMAP folder to monitor and process emails from",
+    ),
 ) -> None:
-    """Run in daemon mode - continuously process emails one at a time.
+    """Run in daemon mode - continuously process emails in batches from specified folder.
 
-    Fetches and processes emails in an infinite loop. Press Ctrl+C to stop.
+    Fetches and processes emails in batches for efficiency. Press Ctrl+C to stop.
     """
     try:
         # Setup logging FIRST - suppress INFO unless verbose (do this BEFORE any imports)
@@ -381,9 +412,15 @@ def daemon(
         successful = 0
         failed = 0
 
-        console.print(f"[cyan]Delay when no emails: {delay}s[/cyan]\n")
+        console.print(
+            f"[cyan]Folder: {folder} | Batch size: {batch_size} | Max concurrent: {max_concurrent} | "
+            f"Delay when no emails: {delay}s[/cyan]\n"
+        )
 
         # Run processing loop
+        # TODO: Future optimization - keep IMAP connection alive across batches
+        # Currently _run_processing() connects and disconnects on each iteration
+        # This works correctly but could be more efficient with connection pooling
         while True:
             try:
                 console.print(
@@ -393,14 +430,15 @@ def daemon(
                 results = asyncio.run(
                     _run_processing(
                         config=cfg,
-                        batch_size=1,  # Always process 1 at a time
+                        batch_size=batch_size,  # Fetch a batch of emails
                         dry_run=False,
                         max_concurrent=max_concurrent,
+                        folder=folder,
                     )
                 )
 
                 if results.get("total_processed", 0) > 0:
-                    # We processed an email
+                    # We processed a batch
                     total_processed += results.get("successful", 0) + results.get(
                         "failed", 0
                     )
@@ -408,8 +446,10 @@ def daemon(
                     failed += results.get("failed", 0)
 
                     console.print(
-                        f"\n[green]✓ Session stats: {successful} successful, {failed} failed, {total_processed} total[/green]\n"
+                        f"\n[green]✓ Batch complete: {results.get('total_processed', 0)} emails | "
+                        f"Session stats: {successful} successful, {failed} failed, {total_processed} total[/green]\n"
                     )
+                    # Don't sleep - immediately check for more emails
                 else:
                     # No emails found, wait before checking again
                     console.print(

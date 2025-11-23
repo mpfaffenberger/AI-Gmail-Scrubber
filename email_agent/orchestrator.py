@@ -63,6 +63,7 @@ class EmailOrchestrator:
         dry_run: bool = False,
         continue_on_error: bool = True,
         max_concurrent: int = 2,
+        folder: str = "INBOX",
     ) -> dict[str, Any]:
         """Main entry point for email processing workflow.
 
@@ -71,6 +72,7 @@ class EmailOrchestrator:
             dry_run: If True, don't actually modify emails.
             continue_on_error: If True, continue processing on errors.
             max_concurrent: Maximum number of emails to process concurrently (default: 2).
+            folder: IMAP folder to fetch emails from (default: "INBOX").
 
         Returns:
             Dict with processing statistics and results.
@@ -91,8 +93,8 @@ class EmailOrchestrator:
             # Initialize agent tools
             await self.agent.initialize_tools()
 
-            # Get unprocessed emails
-            unprocessed = await self.get_unprocessed_emails(n=batch_size)
+            # Get unprocessed emails from specified folder
+            unprocessed = await self.get_unprocessed_emails(n=batch_size, folder=folder)
 
             if not unprocessed:
                 console.print("\n[green]✓ No unprocessed emails found[/green]\n")
@@ -221,11 +223,12 @@ class EmailOrchestrator:
         except Exception as e:
             raise OrchestratorError(str(e)) from e
 
-    async def get_unprocessed_emails(self, n: int = 10) -> list[dict[str, Any]]:
-        """Fetch unprocessed emails.
+    async def get_unprocessed_emails(self, n: int = 10, folder: str = "INBOX") -> list[dict[str, Any]]:
+        """Fetch unprocessed emails from specified folder.
 
         Args:
             n: Number of emails to retrieve.
+            folder: IMAP folder to search (default: "INBOX").
 
         Returns:
             List of email info dicts.
@@ -236,7 +239,7 @@ class EmailOrchestrator:
                     "Email tools not initialized. Run orchestrator.run_processing() first."
                 )
 
-            result = await self.agent.email_tools.get_unprocessed_emails(n=n)
+            result = await self.agent.email_tools.get_unprocessed_emails(n=n, folder=folder)
 
             if result.success:
                 emails = result.data["emails"]

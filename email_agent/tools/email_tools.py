@@ -96,9 +96,9 @@ class EmailTools:
         self.agent_tag = agent_tag
 
     async def get_unprocessed_emails(
-        self, n: int = 10, tag: Optional[str] = None
+        self, n: int = 10, tag: Optional[str] = None, folder: str = "INBOX"
     ) -> ToolResult:
-        """Get the most recent unprocessed emails.
+        """Get the most recent unprocessed emails from a specific folder.
 
         Uses IMAP search to find emails that don't have the agent classification tag,
         sorted by date in descending order (newest first).
@@ -106,6 +106,7 @@ class EmailTools:
         Args:
             n: Number of emails to retrieve (default 10).
             tag: Optional specific tag to filter by. Uses agent_tag if not specified.
+            folder: IMAP folder to search in (default "INBOX").
 
         Returns:
             ToolResult with list of EmailInfo objects in data['emails'].
@@ -114,6 +115,10 @@ class EmailTools:
             from imap_tools import NOT, AND
             
             filter_tag = tag or self.agent_tag
+
+            # Explicitly select the folder before searching
+            # This ensures we only search in the specified folder (default: INBOX)
+            self.mailbox.folder.set(folder)
 
             # Search for emails that DON'T have our classification keyword
             # This properly queries the IMAP server instead of client-side filtering
@@ -163,8 +168,8 @@ class EmailTools:
 
             return ToolResult(
                 success=True,
-                message=f"Retrieved {len(emails)} unprocessed emails (sorted by date descending)",
-                data={"emails": emails},
+                message=f"Retrieved {len(emails)} unprocessed emails from {folder} (sorted by date descending)",
+                data={"emails": emails, "folder": folder},
             )
 
         except Exception as e:
