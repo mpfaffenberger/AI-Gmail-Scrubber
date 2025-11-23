@@ -1,0 +1,83 @@
+# Email Agent Configuration
+# Copy this to ~/.email_agent/config.yaml and customize
+# Environment variables can be used with ${VAR_NAME} syntax
+
+imap:
+  # Gmail IMAP settings
+  server: imap.gmail.com
+  email: ${GMAIL_EMAIL}           # e.g., user@gmail.com
+  port: 993
+  
+  # OAuth 2.0 (recommended for Gmail)
+  use_oauth: true
+  # password: not needed when use_oauth=true
+  
+  # Alternative: Use app-specific password (legacy, not recommended)
+  # use_oauth: false
+  # password: ${GMAIL_APP_PASSWORD}
+  
+  # For other providers:
+  # server: imap.outlook.com (Microsoft)
+  # server: imap.yahoo.com (Yahoo)
+  # server: mail.example.com (Custom)
+
+# OAuth configuration (only needed if use_oauth=true)
+oauth:
+  # Get these from Google Cloud Console
+  # See docs/OAUTH_SETUP.md for detailed instructions
+  client_id: ${GOOGLE_CLIENT_ID}
+  client_secret: ${GOOGLE_CLIENT_SECRET}
+  redirect_uri: http://localhost:8080
+
+processing:
+  # How many emails to process in one batch
+  batch_size: 20
+  
+  # Label/tag to mark processed emails (Gmail)
+  agent_tag: X-EmailAgent-Processed
+  
+  # If true, only simulate actions without modifying emails
+  dry_run: false
+  
+  # If true, skip emails already marked as processed
+  skip_processed: true
+
+model:
+  # Which AI model to use
+  name: claude-3-5-sonnet
+  # Temperature for reasoning (0.0=precise, 2.0=creative)
+  temperature: 0.7
+  # Maximum tokens in response
+  max_tokens: 2000
+
+rules:
+  # Senders to always keep (high confidence)
+  trusted_senders:
+    - boss@company.com
+    - ceo@company.com
+    - team@company.com
+    - mom@example.com
+  
+  # Keywords that indicate spam
+  spam_keywords:
+    - unsubscribe
+    - click here now
+    - limited time offer
+    - act now
+    - congratulations you won
+  
+  # Enable/disable rule-based filtering
+  enabled: true
+
+folders:
+  # Where to move emails by category
+  receipts: Receipts
+  invoices: Invoices/Business
+  newsletters: Archives/Newsletters
+  notifications: Notifications
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+  # Log format string
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

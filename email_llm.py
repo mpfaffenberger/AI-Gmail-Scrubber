@@ -8,7 +8,6 @@ import queue
 import re
 import threading
 import time
-from multiprocessing.pool import ThreadPool
 from typing import Dict, Optional, Union
 
 import pickledb
@@ -50,7 +49,6 @@ def connect_to_gmail_imap() -> imaplib.IMAP4_SSL:
 
 
 class WriteThread(threading.Thread):
-
     def __init__(self):
         super().__init__()
         self.queue = queue.Queue()
@@ -63,22 +61,20 @@ class WriteThread(threading.Thread):
             pdb.set(idx, item)
 
 
-
 def move_gmail_to_trash(mail_client, uid: str):
-    mail_client.store(uid, '+X-GM-LABELS', '\\Trash')
-    mail_client.store(uid, '+FLAGS', '\\Seen')
+    mail_client.store(uid, "+X-GM-LABELS", "\\Trash")
+    mail_client.store(uid, "+FLAGS", "\\Seen")
     mail_client.expunge()
 
 
 class TrasherThread(threading.Thread):
-
     def __init__(self):
         super().__init__()
         self.mail_client = connect_to_gmail_imap()
         self.queue = queue.Queue()
 
     def move_gmail_to_trash(self, uid: str):
-        self.mail_client.store(uid, '+FLAGS', '\\Deleted')
+        self.mail_client.store(uid, "+FLAGS", "\\Deleted")
         self.mail_client.expunge()
 
     def run(self):
@@ -121,14 +117,13 @@ def get_result_wrap(message, temp=0.0):
             logger.info(f"incrementing temp, {decision}, {reason}")
             return get_result_wrap(message, temp=temp + 0.2)
         return decision, reason
-    except Exception as e:
+    except Exception:
         logger.info(f"incrementing temp {res}")
         return get_result_wrap(message, temp=temp + 0.2)
 
 
 def get_result(
-    message: Dict[str, Union[str, bytes, int, float]],
-    temp: float
+    message: Dict[str, Union[str, bytes, int, float]], temp: float
 ) -> Dict[str, Union[str, bytes, int, float]]:
     payload = {
         "model": "llama3.1",
@@ -160,7 +155,7 @@ def get_result(
                 To:  {message["To"]}.
                 Date: {message["Date"]}
                 Subject: {message["Subject"]}
-                Body: {re.sub(r"\s+"," ", message["body"].strip())}
+                Body: {re.sub(r"\s+", " ", message["body"].strip())}
                 *** END MESSAGE ***
             
             Reply only with 'KEEP', 'DELETE', followed by a newline symbol, and then a very short sentence explaining your reasoning and citing the [CODE x].
@@ -175,8 +170,7 @@ def get_result(
 
 
 def process_and_delete_email_idx(
-    idx: str,
-    mail_client
+    idx: str, mail_client
 ) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
     result = process_email_idx(idx, mail_client)
     if result is None:
@@ -186,14 +180,18 @@ def process_and_delete_email_idx(
     return result
 
 
-def process_email_idx(idx: str, mail_client_) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
+def process_email_idx(
+    idx: str, mail_client_
+) -> Optional[Dict[str, Union[str, bytes, int, float]]]:
     try:
         maybe_result = pdb.get(idx)
         if maybe_result:
             logger.info(f"Cache hit on idx: {idx}")
             return maybe_result
         status, msg = mail_client_.fetch(str(idx), "(RFC822)")
-        email_bytes = [part for part in msg if isinstance(part, tuple) and b"RFC822" in part[0]][0][1]
+        email_bytes = [
+            part for part in msg if isinstance(part, tuple) and b"RFC822" in part[0]
+        ][0][1]
         email_fields = extract_data(email.message_from_bytes(email_bytes))
         decision, reason = get_result_wrap(email_fields)
         email_fields["decision"] = decision.replace("\r", "")

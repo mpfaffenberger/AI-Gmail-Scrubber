@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "email-agent"
+version = "0.1.0"
+description = "Modern AI email classification and management agent using pydantic-ai"
+requires-python = ">=3.11,<3.14"
+authors = [
+    {name = "Michael Pfaffenberger"}
+]
+license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+]
+
+dependencies = [
+    "pydantic-ai==1.0.5",
+    "pydantic>=2.4.0",
+    "httpx[http2]>=0.24.1",
+    "python-dotenv>=1.0.0",
+    "rich>=13.4.2",
+    "imap-tools>=1.6.4",
+    "beautifulsoup4>=4.12.0",
+    "anthropic>=0.34.0",
+    "openai>=1.99.1",
+    "typer>=0.12.0",
+    "pyyaml>=6.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-auth>=2.25.0",
+    "code-puppy @ file:///Users/mpfaffenberger/code/code_puppy",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.23.1",
+    "pytest-cov>=6.1.1",
+    "ruff>=0.11.11",
+]
+
+[project.urls]
+repository = "https://github.com/mpfaffenberger/AI-Gmail-Scrubber"
+HomePage = "https://github.com/mpfaffenberger/AI-Gmail-Scrubber"
+
+[project.scripts]
+email-agent = "email_agent.main:main"
+
+[tool.pytest.ini_options]
+addopts = "--cov=email_agent --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = ["email_agent/main.py"]
+
+[tool.hatch.build]
+packages = ["email_agent"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv]
+python-preference = "only-managed"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.23.1",
+    "pytest-cov>=6.1.1",
+    "ruff>=0.11.11",
+]
